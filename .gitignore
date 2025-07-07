@@ -1,0 +1,7 @@
+.vscode/
+gnu-efi/*
+!gnu-efi/.dummy
+tmp/*
+!tmp/.dummy
+OpenSolaris/
+disk.img
