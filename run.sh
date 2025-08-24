@@ -1,4 +1,0 @@
-#!/bin/sh
-
-
-qemu-system-x86_64 -cpu qemu64 -bios OVMF.fd -m 1G -drive file=disk.img,if=ide -net none -no-reboot -d int

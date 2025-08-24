@@ -1,0 +1,18 @@
+boot: Boot files and kernel.
+build: Builded files.
+dev: Device drivers.
+fs: File system drivers.
+inc: OSFort and non-standard header files.
+sys: System files, and POSIX header files.
+tmp: Temporary files created while compiling.
+
+Support List:
+- POSIX.1-2024
+- ACPI 2.0 above
+- PCIe
+- AHCI
+- ext2, ext4?
+- UEFI only
+
+<fcntl.h> might work different with other OSes. (there are unique values differ by Oses)
+<unistd.h> might work different with other OSes. (there are unique values differ by Oses)
