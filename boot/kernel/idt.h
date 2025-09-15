@@ -4,6 +4,8 @@
 #include "../../sys/stdint.h"
 #include "../../inc/asm.h"
 #include "paging.h"
+#include "print.h"
+#include "../../dev/pic/pic.h"
 
 
 struct interrupt_frame;

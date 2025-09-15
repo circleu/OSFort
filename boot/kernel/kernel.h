@@ -14,47 +14,12 @@
 #include "../../dev/pic/pic.h"
 #include "../../dev/pci/pcie.h"
 #include "../../dev/acpi/acpi.h"
-#include "../../inc/asm.h"
+#include "../../dev/ahci/ahci.h"
+#include "../../dev/nvme/nvme.h"
+#include "asm.h"
+#include "print.h"
 
 
-typedef uint64_t size_t;
-typedef struct {
-    uint64_t framebuffer_base;
-    size_t framebuffer_size;
-    uint32_t width;
-    uint32_t height;
-    uint32_t pixels_per_scanline;
-    uint32_t x;
-    uint32_t y;
-}__attribute__((packed)) GRAPHICS;
-
-void kputc(const char ch, GRAPHICS* graphics) {
-    switch (ch) {
-        case '\n': graphics->y++; return;
-        case '\r': graphics->x = 0; return;
-    }
-
-    BITMAP ch_bitmap;
-    ch_bitmap.buffer = char_to_bitmap(ch);
-    ch_bitmap.size = FONT_HEIGHT;
-
-    if (ch_bitmap.buffer == NULL) return;
-
-    for (uint8_t i = 0; i < FONT_HEIGHT; i++)
-        for (uint8_t j = 0; j < FONT_WIDTH; j++)
-            if (get_bitmap(&ch_bitmap, i * FONT_WIDTH + (FONT_WIDTH - j - 1))) *(uint32_t*)(graphics->framebuffer_base + (graphics->pixels_per_scanline * (graphics->y * FONT_HEIGHT + i) * 4) + ((graphics->x * FONT_WIDTH + j) * 4)) = 0xaaaaaaaa;
-
-    graphics->x++;
-
-    if (graphics->x >= graphics->pixels_per_scanline / FONT_WIDTH) {
-        graphics->x -= graphics->pixels_per_scanline / FONT_WIDTH;
-        graphics->y++;
-    }
-}
-void kputs(const char* str, GRAPHICS* graphics) {
-    for (size_t i = 0; str[i] != 0; i++)
-        kputc(str[i], graphics);
-}
 void enter_usr_mode(void* entry, void* usr_stack) {
     __asm__ volatile (
         "cli;"
@@ -76,6 +41,9 @@ extern GDTR gdtr;
 extern IDT idt;
 extern IDTR idtr;
 extern PAGE_BITMAP page_bitmap;
+extern GRAPHICS graphics;
+extern uint8_t asq[NVME_ADMIN_QUEUE_ENTRIES * NVME_SQE_SIZE];
+extern uint8_t acq[NVME_ADMIN_QUEUE_ENTRIES * NVME_CQE_SIZE];
 
 
 #endif

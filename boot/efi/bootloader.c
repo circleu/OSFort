@@ -72,11 +72,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
     }
     /*********************************************************/
 
-    /******************* Get Kernel Loader *******************/
+    /******************* Get Kernel *******************/
     UINT8* Kernel;
     EFI_BLOCK_IO_PROTOCOL* block_io;
     UINT32 media_id;
     UINTN lba_size = 512;
+    BOOTDISK_ADDRESS bootdisk_addr;
     {
         EFI_HANDLE* block_ios;
         UINTN block_io_num;
@@ -110,6 +111,38 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
                 Print(L"Found Disk.\r\n");
                 disk_found = 1;
 
+                EFI_DEVICE_PATH_PROTOCOL* bootdisk_path;
+                Status = uefi_call_wrapper(BS->HandleProtocol, 3, block_ios[i], &gEfiDevicePathProtocolGuid, (VOID**)&bootdisk_path);
+                if (EFI_ERROR(Status)) {
+                    Print(L"Could not locate DevicePathProtocol; Error Code: 0x%02x\r\n", Status);
+                    while (1);
+                }
+
+                EFI_HANDLE bootdisk_handle;
+                Status = uefi_call_wrapper(BS->LocateDevicePath, 3, &gEfiPciIoProtocolGuid, &bootdisk_path, &bootdisk_handle);
+                if (EFI_ERROR(Status)) {
+                    Print(L"Could not locate PciIoProtocol handle; Error Code: 0x%02x\r\n", Status);
+                    while (1);
+                }
+                EFI_PCI_IO_PROTOCOL* bootdisk;
+                Status = uefi_call_wrapper(BS->HandleProtocol, 3, bootdisk_handle, &gEfiPciIoProtocolGuid, (VOID**)&bootdisk);
+                if (EFI_ERROR(Status)) {
+                    Print(L"Could not locate PciIoProtocol; Error Code: 0x%02x\r\n", Status);
+                    while (1);
+                }
+
+                UINTN seg, bus, dev, func;
+                Status = uefi_call_wrapper(bootdisk->GetLocation, 5, bootdisk, &seg, &bus, &dev, &func);
+                if (EFI_ERROR(Status)) {
+                    Print(L"Could not get location of bootdisk; Error Code: 0x%02x\r\n", Status);
+                    while (1);
+                }
+
+                bootdisk_addr.seg = (UINTN)seg;
+                bootdisk_addr.bus = (UINT8)bus;
+                bootdisk_addr.dev = (UINT8)dev;
+                bootdisk_addr.func = (UINT8)func;
+                
                 break;
             }
         }
@@ -472,7 +505,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
         }
     }
 
-    /****************** Start Kernel Loader ******************/
+    /****************** Start Kernel ******************/
     BOOTINFO BootInfo = {
         {
             GOP->Mode->FrameBufferBase,
@@ -486,17 +519,18 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
             mem_map_size,
             desc_size
         },
-        (UINT64)xsdt
+        (UINT64)xsdt,
+        (BOOTDISK_ADDRESS)bootdisk_addr
     };
 
-    VOID (*KernelLoaderStart)(VOID*) = ((__attribute__((sysv_abi)) VOID (*)(VOID*)) KernelEntry);
+    VOID (*KernelStart)(VOID*) = ((__attribute__((sysv_abi)) VOID (*)(VOID*)) KernelEntry);
 
     Print(L"Loading Kernel...\r\n");
 
     uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
     uefi_call_wrapper(BS->ExitBootServices, 2, ImageHandle, mem_map_key);
 
-    KernelLoaderStart(&BootInfo);
+    KernelStart(&BootInfo);
     /*********************************************************/
 
     return EFI_SUCCESS;

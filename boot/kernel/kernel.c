@@ -1,10 +1,10 @@
 #include "kernel.h"
 
-#define KERNEL_START 0x100000000
+#define KERNEL_START 0xC0000000
 
 
 extern void _start(void* BootInfo) {
-    GRAPHICS graphics = {
+    graphics = (GRAPHICS){
         ((BOOTINFO*)BootInfo)->gop.framebuffer_base,
         ((BOOTINFO*)BootInfo)->gop.framebuffer_size,
         ((BOOTINFO*)BootInfo)->gop.width,
@@ -19,16 +19,17 @@ extern void _start(void* BootInfo) {
     ACPI_MCFG* mcfg;
     uint32_t* apic_base;
     PAGE_TABLE* pml4;
+    BOOTDISK_ADDRESS bootdisk_addr = ((BOOTINFO*)BootInfo)->bootdisk_addr;
 
 /*******************************************************************/
 
-    kputs("Loading GDT...", &graphics);
+    kputs("Loading GDT...");
     {
         load_gdt(&gdtr);
     }
-    kputs("Done\r\n", &graphics);
+    kputs("Done!\r\n");
     
-    kputs("Setting Paging...", &graphics);
+    kputs("Setting Paging...");
     {
         size_t mmap_entries = efi_mmap.size / efi_mmap.desc_size;
         void* largest_desc = NULL;
@@ -37,22 +38,22 @@ extern void _start(void* BootInfo) {
 
         for (size_t i = 0; i < mmap_entries; i++) {
             MEMORY_DESCRIPTOR* desc = (MEMORY_DESCRIPTOR*)((uint8_t*)efi_mmap.map + efi_mmap.desc_size * i);
-            total_mem_size += desc->num_pages * 0x1000;
+            total_mem_size += desc->num_pages * PAGE_SIZE;
 
             /* EfiConventionalMemory */
             if (desc->type == 7) {
-                if (desc->num_pages * 0x1000 > largest_desc_size) {
+                if (desc->num_pages * PAGE_SIZE > largest_desc_size) {
                     largest_desc = (void*)desc->phys_addr;
-                    largest_desc_size = desc->num_pages * 0x1000;
+                    largest_desc_size = desc->num_pages * PAGE_SIZE;
                 }
             }
         }
 
         page_bitmap.free = total_mem_size;
-        page_bitmap.bitmap.size = total_mem_size / 0x1000 / 8 + 1;
+        page_bitmap.bitmap.size = total_mem_size / PAGE_SIZE / 8 + 1;
         page_bitmap.bitmap.buffer = (uint8_t*)largest_desc;
         memset(page_bitmap.bitmap.buffer, 0, page_bitmap.bitmap.size);
-        lock_pages(&page_bitmap, (void*)page_bitmap.bitmap.buffer, page_bitmap.bitmap.size / 0x1000 + 1);
+        lock_pages(&page_bitmap, (void*)page_bitmap.bitmap.buffer, page_bitmap.bitmap.size / PAGE_SIZE + 1);
 
         for (size_t i = 0; i < mmap_entries; i++) {
             MEMORY_DESCRIPTOR* desc = (MEMORY_DESCRIPTOR*)((uint8_t*)efi_mmap.map + efi_mmap.desc_size * i);
@@ -63,161 +64,93 @@ extern void _start(void* BootInfo) {
         }
 
         size_t kernel_size = (size_t)&_kernel_end - (size_t)&_kernel_start;
-        size_t kernel_pages = kernel_size / 0x1000 + 1;
+        size_t kernel_pages = kernel_size / PAGE_SIZE + 1;
         reserve_pages(&page_bitmap, &_kernel_start, kernel_pages);
 
         pml4 = (PAGE_TABLE*)req_page(&page_bitmap);
-        memset(pml4, 0, 0x1000);
+        memset(pml4, 0, PAGE_SIZE);
 
-        for (size_t i = 0; i < total_mem_size; i += 0x1000) {
-            map_page(&page_bitmap, pml4, (void*)i, (void*)i);
-        }
+        map_pages(&page_bitmap, pml4, (void*)0, (void*)0, total_mem_size / PAGE_SIZE);
 
-        lock_pages(&page_bitmap, (void*)graphics.framebuffer_base, graphics.framebuffer_size / 0x1000 + 1);
-        for (size_t i = 0; i < (size_t)graphics.framebuffer_size; i += 0x1000) {
-            map_page(&page_bitmap, pml4, (void*)(graphics.framebuffer_base + i), (void*)(graphics.framebuffer_base + i));
-        }
+        lock_pages(&page_bitmap, (void*)graphics.framebuffer_base, graphics.framebuffer_size / PAGE_SIZE + 1);
+        map_pages(&page_bitmap, pml4, (void*)graphics.framebuffer_base, (void*)graphics.framebuffer_base, graphics.framebuffer_size / PAGE_SIZE + 1);
 
-        for (size_t i = 0; i < kernel_size; i += 0x1000) {
-            map_page(&page_bitmap, pml4, (void*)((size_t)_kernel_start + i), (void*)((size_t)_kernel_start + i));
-        }
+        map_pages(&page_bitmap, pml4, (void*)KERNEL_START, (void*)_kernel_start, kernel_pages);
 
         madt = acpi_get_table(xsdt, "APIC");
         apic_base = (uint32_t*)((uint64_t)madt->local_apic_addr);
         map_page(&page_bitmap, pml4, (void*)apic_base, (void*)apic_base);
 
         mcfg = acpi_get_table(xsdt, "MCFG");
-        size_t mcfg_pages = mcfg->header.len / 0x1000 + 1;
-        for (size_t i = 0; i < mcfg_pages; i++) {
-            map_page(&page_bitmap, pml4, (void*)((uint64_t)mcfg + i), (void*)((uint64_t)mcfg + i));
-        }
+        size_t mcfg_pages = mcfg->header.len / PAGE_SIZE + 1;
+        map_pages(&page_bitmap, pml4, (void*)mcfg, (void*)mcfg, mcfg_pages);
         
         __asm__ volatile ("movq %0, %%cr3"::"r"(pml4));
     }
-    kputs("Done\r\n", &graphics);
+    kputs("Done!\r\n");
 
-    kputs("Setting IDT...", &graphics);
+    kputs("Setting IDT...");
     {
         set_idt();
-
-        __asm__ volatile ("cli");
-
-        outb(ICW1_INIT | ICW1_ICW4, PIC1_COM);
-        io_wait();
-        outb(ICW1_INIT | ICW1_ICW4, PIC2_COM);
-        io_wait();
-        outb(0x20, PIC1_DATA); // Timer
-        io_wait();
-        outb(0x28, PIC2_DATA); // Keyboard
-        io_wait();
-        outb(0x04, PIC1_DATA);
-        io_wait();
-        outb(0x02, PIC2_DATA);
-        io_wait();
-        outb(ICW4_8086, PIC1_DATA);
-        io_wait();
-        outb(ICW4_8086, PIC2_DATA);
-        io_wait();
-
-/* Mask both PICs to use APIC */
-        outb(0x00, PIC1_DATA);
-        io_wait();
-        outb(0x00, PIC2_DATA);
-        io_wait();
-
-        __asm__ volatile ("sti");
     }
-    kputs("Done\r\n", &graphics);
+    kputs("Done!\r\n");
 
-    kputs("Setting APIC Timer...", &graphics);
+    kputs("Setting APIC Timer...");
     {
-        uint32_t* apic_base = (uint32_t*)((uint64_t)madt->local_apic_addr);
-    
-/* map spurious interrupt */
-        *(apic_base + APIC_REGISTER_SPURIOUS) = 0x27;
-
-/* map timer interrupt */
-        *(apic_base + APIC_REGISTER_LVT_TIMER) = 0x20;
-        *(apic_base + APIC_REGISTER_LVT_TIMER) = 0x21;
-
-/* setup divide value to 16 */
-        *(apic_base + APIC_REGISTER_TIMER_DIV) = 0x03;
-
-/**************************************************************
- * from osdev wiki > APIC timer
- * init PIC ch2 in one-shot mode
- *************************************************************/
-        outb(((inb(0x61) & 0xfd) | 1), 0x61);
-        outb(0xb2, 0x43);
-
-/* 1193180/100 Hz = 11931 = 0x2e9b */
-        outb(0x9b, 0x42);
-        io_wait();
-        outb(0x2e, 0x42);
-
-/* reset PIT one-shot? counter (start counting) */
-        {
-            uint8_t tmp = (inb(0x61) & 0xfe);
-            outb(tmp, 0x61);
-            outb(tmp | 1, 0x61);
-        }
-
-/* reset APIC timer (set counter to -1) */
-        *(apic_base + APIC_REGISTER_TIMER_ICR) = (uint32_t)-1;
-
-/* wait untile PIT counter reaches zero */
-        while (inb(0x61) & 0x20 == 0);
-
-/* stop APIC timer */
-        *(apic_base + APIC_REGISTER_LVT_TIMER) = 0x10000;
-
-/**************************************************************
- *  get current counter value
- * 
- *  make tmp0 to positive (cos it counts from -1)
- *  -> the value is divided by 16 so multiply by 16
- *  -> multiply 100 (Hz)
- *  -> divide by n: task will be done n times in a second -> HZ = 100
- *  -> divide by 16? - Maybe the value multiplied by 16 so divide it back?
- *
- *  => tmp0 -> tmp1
- *************************************************************/
-
-        {
-            uint32_t tmp0 = *(apic_base + APIC_REGISTER_TIMER_ICR);
-            uint32_t tmp1 = (((uint64_t)((0xffffffff - tmp0 + 1) << 4) * 100) / 100) >> 4;
-
-/* sanity check*/
-            if (tmp1 >= 0x10) {
-                *(apic_base + APIC_REGISTER_TIMER_ICR) = tmp1;
-
-/* re-enable timer in periodic mode */
-                *(apic_base + APIC_REGISTER_LVT_TIMER) = 0x20 | 0x20000;
-            }
-        }
+        acpi_set_apic_timer(madt, 100);
     }
-    kputs("Done\r\n", &graphics);
+    kputs("Done!\r\n");
 
-    kputs("Setting PCIe...", &graphics);
+    kputs("Finding Bootdisk and Initialising NVMe...\r\n");
     {
-        size_t entries = (mcfg->header.len - sizeof(ACPI_SDT_HEADER) - sizeof(mcfg->res)) / sizeof(ACPI_MCFG_CONFIGURATION_SPACE_ENTRY);
-        for (size_t i = 0; i < entries; i++) {
-            for (size_t j = mcfg->config_space[i].pci_num_start; j < mcfg->config_space[i].pci_num_end; j++) {
-                for (uint8_t k = 0; k < 32; k++) {
-                    for (uint8_t l = 0; l < 8; l++) {
-                        PCIE_CONFIGURATION_SPACE_HEADER_TYPE_0* ecam_addr = (PCIE_CONFIGURATION_SPACE_HEADER_TYPE_0*)(mcfg->config_space[i].base_addr + ((j << 20) | (k << 15) | (l << 12)));
-                        // map_page(&page_bitmap, pml4, (void*)ecam_addr, (void*)ecam_addr);
-                        // invlpg((uint64_t)ecam_addr); 
-                        if (pcie_array_to_uint64(ecam_addr->class_code, sizeof(ecam_addr->class_code)) == 0x01) kputs("mass_storage!!!!!\n", &graphics);
-/*!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Exception #GP here !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-                    }
-                }
-            }
-        }
-    }
-    kputs("Done\r\n", &graphics);
+        uint64_t bootdisk_config_space_addr = (
+            mcfg->config_space[bootdisk_addr.seg].base_addr + 
+            ((size_t)bootdisk_addr.bus << 20) + 
+            ((size_t)bootdisk_addr.dev << 15) + 
+            ((size_t)bootdisk_addr.func << 12)
+        );
+        uint32_t class_code = *(uint32_t*)(bootdisk_config_space_addr + 0x08);
+        PCIE_CONFIGURATION_SPACE_HEADER_TYPE_0 bootdisk_config;
 
-    kputs("Setting syscall...", &graphics);
+        if (
+            (class_code >> 24) == 0x01 &&
+            ((class_code >> 16) & 0xff) == 0x08
+        ) {
+            kputs("\tFound Bootdisk.\r\n");
+        }
+        else {
+            kputs("\tCould not find bootdisk.\r\n");
+            while(1);
+        }
+
+        for (size_t i = 0; i < PCIE_CONFIGURATION_SPACE_HEADER_SIZE / 4; i++) {
+            ((uint32_t*)&bootdisk_config)[i] = ((uint32_t*)bootdisk_config_space_addr)[i];
+        }
+        /*
+
+        uint64_t bootdisk_cntl_addr = ((uint64_t)bootdisk_config.base_addr0 & 0xfffffff0) | ((uint64_t)bootdisk_config.base_addr1 << 32);
+        map_page(&page_bitmap, pml4, (void*)bootdisk_cntl_addr, (void*)bootdisk_cntl_addr);
+        invlpg(bootdisk_cntl_addr);
+        
+        NVME_CONTROLLER_REGISTERS* bootdisk_cntl = (NVME_CONTROLLER_REGISTERS*)((uint64_t)bootdisk_cntl_addr);
+
+        bootdisk_cntl->aqa.asqs = (uint16_t)NVME_ADMIN_QUEUE_ENTRIES - 1;
+        bootdisk_cntl->aqa.acqs = (uint16_t)NVME_ADMIN_QUEUE_ENTRIES - 1;
+        bootdisk_cntl->asq.asqb = (uint64_t)&asq & 0x000FFFFFFFFFFFFF;
+        bootdisk_cntl->acq.acqb = (uint64_t)&acq & 0x000FFFFFFFFFFFFF;
+        bootdisk_cntl->cc.iosqes = (uint8_t)NVME_SQE_SIZE_LOG;
+        bootdisk_cntl->cc.iocqes = (uint8_t)NVME_CQE_SIZE_LOG;
+        bootdisk_cntl->cc.en = (uint8_t)1;
+
+        kputs("\tWaiting for NVMe Controller...");
+        while (!(bootdisk_cntl->csts.rdy));
+        kputs("Done!\r\n");
+        
+        */
+    }
+    kputs("Done!\r\n");
+
+    kputs("Setting syscall...");
     {
 /* set IA32_EFER.SCE (bit 0) to enable syscall/sysret instruction */
         wrmsr(0xc0000080, rdmsr(0xc0000080) | 1);
@@ -230,9 +163,9 @@ extern void _start(void* BootInfo) {
         wrmsr(0xc0000081, (rdmsr(0xc0000081) & 0xffffffff) | ((uint64_t)0x08 << 32) | ((uint64_t)0x18 << 48));
         wrmsr(0xc0000084, rdmsr(0xc0000084) | (uint64_t)(1 << 9));
     }
-    kputs("Done\r\n", &graphics);
+    kputs("Done!\r\n");
 
-    kputs("Entering user mode...\r\n\r\n", &graphics);
+    kputs("Entering user mode...\r\n\r\n");
     
 
     

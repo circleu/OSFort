@@ -3,6 +3,7 @@ all:
 	make -f boot/efi/Makefile
 	make -f dev/acpi/Makefile
 	make -f dev/pci/Makefile
+	make -f dev/nvme/Makefile
 	make -f inc/Makefile
 	make -f sys/Makefile
 	make -f boot/kernel/Makefile
@@ -17,6 +18,7 @@ clean:
 	mkdir tmp/dev/ahci
 	mkdir tmp/dev/pci
 	mkdir tmp/dev/pic
+	mkdir tmp/dev/nvme
 	mkdir tmp/fs
 	mkdir tmp/inc
 	mkdir tmp/sys
@@ -26,6 +28,7 @@ clean:
 	cp tmp/.dummy tmp/dev/ahci
 	cp tmp/.dummy tmp/dev/pci
 	cp tmp/.dummy tmp/dev/pic
+	cp tmp/.dummy tmp/dev/nvme
 	cp tmp/.dummy tmp/fs
 	cp tmp/.dummy tmp/inc
 	cp tmp/.dummy tmp/sys

@@ -4,6 +4,7 @@
 #include "../../sys/stdint.h"
 #include "../../sys/stddef.h"
 #include "../../sys/string.h"
+#include "../../inc/asm.h"
 
 #define APIC_REGISTER_LAPIC_ID 0x20
 #define APIC_REGISTER_LAPIC_VER 0x30
@@ -161,6 +162,7 @@ typedef struct {
 }__attribute__((packed)) ACPI_MCFG;
 
 void* acpi_get_table(ACPI_XSDT* xsdt, const char* name);
+void acpi_set_apic_timer(ACPI_MADT* madt, int int_per_second);
 
 
 #endif

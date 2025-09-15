@@ -26,9 +26,16 @@ typedef struct {
     size_t desc_size;
 }__attribute__((packed)) MEMORY_MAP;
 typedef struct {
+    size_t seg;
+    uint8_t bus;
+    uint8_t dev;
+    uint8_t func;
+}__attribute__((packed)) BOOTDISK_ADDRESS;
+typedef struct {
     GRAPHICS_OUTPUT_PROTOCOL gop;
     MEMORY_MAP mem_map;
     uint64_t xsdt_addr;
+    BOOTDISK_ADDRESS bootdisk_addr;
 }__attribute__((packed)) BOOTINFO;
 
 

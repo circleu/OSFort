@@ -90,6 +90,33 @@ void set_idt() {
     *(GATE_DESCRIPTOR*)(idtr.offs + 0x0d * sizeof(GATE_DESCRIPTOR)) = idt.gp;
 
     __asm__ volatile ("lidt (%0);"::"r"(&idtr));
+
+    __asm__ volatile ("cli");
+
+    outb(ICW1_INIT | ICW1_ICW4, PIC1_COM);
+    io_wait();
+    outb(ICW1_INIT | ICW1_ICW4, PIC2_COM);
+    io_wait();
+    outb(0x20, PIC1_DATA); // Timer
+    io_wait();
+    outb(0x28, PIC2_DATA); // Keyboard
+    io_wait();
+    outb(0x04, PIC1_DATA);
+    io_wait();
+    outb(0x02, PIC2_DATA);
+    io_wait();
+    outb(ICW4_8086, PIC1_DATA);
+    io_wait();
+    outb(ICW4_8086, PIC2_DATA);
+    io_wait();
+
+/* Mask both PICs to use APIC */
+    outb(0x00, PIC1_DATA);
+    io_wait();
+    outb(0x00, PIC2_DATA);
+    io_wait();
+
+    __asm__ volatile ("sti");
 }
 __attribute__((interrupt)) void timer(struct interrupt_frame*) {
     outb(0x20, 0x20);
@@ -105,13 +132,22 @@ __attribute__((interrupt)) void spurious_irq(struct interrupt_frame*) {
 }
 __attribute__((interrupt)) void pf(struct interrupt_frame*) {
     outb(0x20, 0x20);
+    clear_screen(0xff444444);
+    kputs("#PF\r\n");
+    while (1);
     return;
 }
 __attribute__((interrupt)) void df(struct interrupt_frame*) {
     outb(0x20, 0x20);
+    clear_screen(0xff444444);
+    kputs("#DF\r\n");
+    while (1);
     return;
 }
 __attribute__((interrupt)) void gp(struct interrupt_frame*) {
     outb(0x20, 0x20);
+    clear_screen(0xff444444);
+    kputs("#GP\r\n");
+    while (1);
     return;
 }

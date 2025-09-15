@@ -5,6 +5,8 @@
 #include "../../sys/string.h"
 #include "bitmap.h"
 
+#define PAGE_SIZE 0x1000
+
 
 typedef struct {
     BITMAP bitmap;
@@ -41,6 +43,7 @@ void reserve_page(PAGE_BITMAP* page_bitmap, void* addr);
 void reserve_pages(PAGE_BITMAP* page_bitmap, void* addr, size_t page_cnt);
 void* req_page(PAGE_BITMAP* page_bitmap);
 void map_page(PAGE_BITMAP* page_bitmap, PAGE_TABLE* pml4, void* vir_addr, void* phys_addr);
+void map_pages(PAGE_BITMAP* page_bitmap, PAGE_TABLE* pml4, void* vir_addr, void* phys_addr, size_t page_cnt);
 
 
 #endif

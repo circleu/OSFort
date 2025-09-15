@@ -4,72 +4,72 @@
 PAGE_BITMAP page_bitmap = {0, };
 
 void free_page(PAGE_BITMAP* page_bitmap, void* addr) {
-    size_t i = (size_t)addr / 0x1000;
+    size_t i = (size_t)addr / PAGE_SIZE;
 
     if (get_bitmap(&(page_bitmap->bitmap), i)) {
         set_bitmap(&(page_bitmap->bitmap), i, 0);
 
-        page_bitmap->free += 0x1000;
-        page_bitmap->used -= 0x1000;
+        page_bitmap->free += PAGE_SIZE;
+        page_bitmap->used -= PAGE_SIZE;
     }
     else return;
 }
 void free_pages(PAGE_BITMAP* page_bitmap, void* addr, size_t page_cnt) {
     for (size_t i = 0; i < page_cnt; i++)
-        free_page(page_bitmap, (void*)((uint8_t*)addr + i * 0x1000));
+        free_page(page_bitmap, (void*)((uint8_t*)addr + i * PAGE_SIZE));
 }
 void lock_page(PAGE_BITMAP* page_bitmap, void* addr) {
-    size_t i = (size_t)addr / 0x1000;
+    size_t i = (size_t)addr / PAGE_SIZE;
 
     if (!get_bitmap(&(page_bitmap->bitmap), i)) {
         set_bitmap(&(page_bitmap->bitmap), i, 1);
 
-        page_bitmap->free -= 0x1000;
-        page_bitmap->used += 0x1000;
+        page_bitmap->free -= PAGE_SIZE;
+        page_bitmap->used += PAGE_SIZE;
     }
     else return;
 }
 void lock_pages(PAGE_BITMAP* page_bitmap, void* addr, size_t page_cnt) {
     for (size_t i = 0; i < page_cnt; i++)
-        lock_page(page_bitmap, (void*)((uint8_t*)addr + i * 0x1000));
+        lock_page(page_bitmap, (void*)((uint8_t*)addr + i * PAGE_SIZE));
 }
 void unreserve_page(PAGE_BITMAP* page_bitmap, void* addr) {
-    size_t i = (size_t)addr / 0x1000;
+    size_t i = (size_t)addr / PAGE_SIZE;
 
     if (get_bitmap(&(page_bitmap->bitmap), i)) {
         set_bitmap(&(page_bitmap->bitmap), i, 0);
 
-        page_bitmap->free += 0x1000;
-        page_bitmap->reserved -= 0x1000;
+        page_bitmap->free += PAGE_SIZE;
+        page_bitmap->reserved -= PAGE_SIZE;
     }
     else return;
 }
 void unreserve_pages(PAGE_BITMAP* page_bitmap, void* addr, size_t page_cnt) {
     for (size_t i = 0; i < page_cnt; i++)
-        unreserve_page(page_bitmap, (void*)((uint8_t*)addr + i * 0x1000));
+        unreserve_page(page_bitmap, (void*)((uint8_t*)addr + i * PAGE_SIZE));
 }
 void reserve_page(PAGE_BITMAP* page_bitmap, void* addr) {
-    size_t i = (size_t)addr / 0x1000;
+    size_t i = (size_t)addr / PAGE_SIZE;
 
     if (!get_bitmap(&(page_bitmap->bitmap), i)) {
         set_bitmap(&(page_bitmap->bitmap), i, 1);
 
-        page_bitmap->free -= 0x1000;
-        page_bitmap->reserved += 0x1000;
+        page_bitmap->free -= PAGE_SIZE;
+        page_bitmap->reserved += PAGE_SIZE;
     }
     else return;
 }
 void reserve_pages(PAGE_BITMAP* page_bitmap, void* addr, size_t page_cnt) {
     for (size_t i = 0; i < page_cnt; i++)
-        reserve_page(page_bitmap, (void*)((uint8_t*)addr + i * 0x1000));
+        reserve_page(page_bitmap, (void*)((uint8_t*)addr + i * PAGE_SIZE));
 }
 void* req_page(PAGE_BITMAP* page_bitmap) {
     for (size_t i = 0; i < page_bitmap->bitmap.size * 8; i++) {
         if (get_bitmap(&(page_bitmap->bitmap), i)) continue;
         else {
-            lock_page(page_bitmap, (void*)(i * 0x1000));
+            lock_page(page_bitmap, (void*)(i * PAGE_SIZE));
 
-            return (void*)(i * 0x1000);
+            return (void*)(i * PAGE_SIZE);
         }
     }
     return NULL;
@@ -85,7 +85,7 @@ void map_page(PAGE_BITMAP* page_bitmap, PAGE_TABLE* pml4, void* vir_addr, void* 
     pe = pml4->entries[pdpt_i];
     if (!pe.p) {
         pdpt = (PAGE_TABLE*)req_page(page_bitmap);
-        memset(pdpt, 0, 0x1000);
+        memset(pdpt, 0, PAGE_SIZE);
 
         pe.addr = (uint64_t)pdpt >> 12;
         pe.p = 1;
@@ -100,7 +100,7 @@ void map_page(PAGE_BITMAP* page_bitmap, PAGE_TABLE* pml4, void* vir_addr, void* 
     pe = pdpt->entries[pd_i];
     if (!pe.p) {
         pd = (PAGE_TABLE*)req_page(page_bitmap);
-        memset(pd, 0, 0x1000);
+        memset(pd, 0, PAGE_SIZE);
 
         pe.addr = (uint64_t)pd >> 12;
         pe.p = 1;
@@ -115,7 +115,7 @@ void map_page(PAGE_BITMAP* page_bitmap, PAGE_TABLE* pml4, void* vir_addr, void* 
     pe = pd->entries[pt_i];
     if (!pe.p) {
         pt = (PAGE_TABLE*)req_page(page_bitmap);
-        memset(pt, 0, 0x1000);
+        memset(pt, 0, PAGE_SIZE);
 
         pe.addr = (uint64_t)pt >> 12;
         pe.p = 1;
@@ -131,4 +131,9 @@ void map_page(PAGE_BITMAP* page_bitmap, PAGE_TABLE* pml4, void* vir_addr, void* 
     pe.p = 1;
     pe.rw = 1;
     pt->entries[p_i] = pe;
+}
+void map_pages(PAGE_BITMAP* page_bitmap, PAGE_TABLE* pml4, void* vir_addr, void* phys_addr, size_t page_cnt) {
+    for (size_t i = 0; i < page_cnt; i++) {
+        map_page(page_bitmap, pml4, vir_addr + i * PAGE_SIZE, phys_addr + i * PAGE_SIZE);
+    }
 }
