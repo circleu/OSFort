@@ -1,6 +1,7 @@
 #ifndef _KERNEL_PRINT_H
 #define _KERNEL_PRINT_H
 
+#include "../../sys/stdarg.h"
 #include "bootinfo.h"
 #include "font.h"
 #include "bitmap.h"
@@ -18,6 +19,7 @@ typedef struct {
 
 void kputc(const char ch);
 void kputs(const char* str);
+void kprintf(const char* str, ...);
 void clear_line(unsigned int line);
 void clear_screen(uint32_t color);
 uint64_t pow(uint64_t a, uint64_t b);

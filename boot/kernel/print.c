@@ -5,12 +5,18 @@ GRAPHICS graphics;
 
 void kputc(const char ch) {
     switch (ch) {
-        case '\n': graphics.y++; return;
+        case '\n': {
+            graphics.y++;
+            graphics.x = 0;
+            
+            return;
+        }
         case '\r': graphics.x = 0; return;
         case '\t': {
             for (size_t i = 0; i < 4; i++) {
                 kputc(' ');
             }
+            return;
         }
     }
 
@@ -34,6 +40,30 @@ void kputc(const char ch) {
 void kputs(const char* str) {
     for (size_t i = 0; str[i] != 0; i++)
         kputc(str[i]);
+}
+void kprintf(const char* str, ...) {
+    va_list ap;
+
+    va_start(ap, str);
+
+    for (size_t i = 0; str[i] != 0; i++) {
+        if (str[i] == '%') {
+            if (str[i + 1] == 'd') { i++;
+                kputs(itoa(va_arg(ap, int)));
+            }
+            else if (str[i + 1] == 's') { i++;
+                kputs(va_arg(ap, char*));
+            }
+            else if (str[i + 1] == 'x') { i++;
+                kputs(hex(va_arg(ap, int)));
+            }
+        }
+        else {
+            kputc(str[i]);
+        }
+    }
+
+    va_end(ap);
 }
 void clear_line(unsigned int line) {
     graphics.x = 0;

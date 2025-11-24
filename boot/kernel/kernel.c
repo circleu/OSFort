@@ -1,7 +1,13 @@
 #include "kernel.h"
 
-#define KERNEL_START 0xC0000000
 
+MEMORY_MAP efi_mmap;
+ACPI_XSDT* xsdt;
+ACPI_MADT* madt;
+ACPI_MCFG* mcfg;
+uint32_t* apic_base;
+PAGE_TABLE* pml4;
+BOOTDISK_ADDRESS bootdisk_addr;
 
 extern void _start(void* BootInfo) {
     graphics = (GRAPHICS){
@@ -13,23 +19,19 @@ extern void _start(void* BootInfo) {
         0,
         0
     };
-    MEMORY_MAP efi_mmap = ((BOOTINFO*)BootInfo)->mem_map;
-    ACPI_XSDT* xsdt = (ACPI_XSDT*)(((BOOTINFO*)BootInfo)->xsdt_addr);
-    ACPI_MADT* madt;
-    ACPI_MCFG* mcfg;
-    uint32_t* apic_base;
-    PAGE_TABLE* pml4;
-    BOOTDISK_ADDRESS bootdisk_addr = ((BOOTINFO*)BootInfo)->bootdisk_addr;
+    efi_mmap = ((BOOTINFO*)BootInfo)->mem_map;
+    xsdt = (ACPI_XSDT*)(((BOOTINFO*)BootInfo)->xsdt_addr);
+    bootdisk_addr = ((BOOTINFO*)BootInfo)->bootdisk_addr;
 
 /*******************************************************************/
 
-    kputs("Loading GDT...");
+    kprintf("Loading GDT...");
     {
         load_gdt(&gdtr);
     }
-    kputs("Done!\r\n");
+    kprintf("Done!\n");
     
-    kputs("Setting Paging...");
+    kprintf("Setting Paging...");
     {
         size_t mmap_entries = efi_mmap.size / efi_mmap.desc_size;
         void* largest_desc = NULL;
@@ -75,7 +77,7 @@ extern void _start(void* BootInfo) {
         lock_pages(&page_bitmap, (void*)graphics.framebuffer_base, graphics.framebuffer_size / PAGE_SIZE + 1);
         map_pages(&page_bitmap, pml4, (void*)graphics.framebuffer_base, (void*)graphics.framebuffer_base, graphics.framebuffer_size / PAGE_SIZE + 1);
 
-        map_pages(&page_bitmap, pml4, (void*)KERNEL_START, (void*)_kernel_start, kernel_pages);
+        map_pages(&page_bitmap, pml4, (void*)(KERNEL_START + (size_t)&_kernel_start), (void*)&_kernel_start, kernel_pages);
 
         madt = acpi_get_table(xsdt, "APIC");
         apic_base = (uint32_t*)((uint64_t)madt->local_apic_addr);
@@ -85,23 +87,30 @@ extern void _start(void* BootInfo) {
         size_t mcfg_pages = mcfg->header.len / PAGE_SIZE + 1;
         map_pages(&page_bitmap, pml4, (void*)mcfg, (void*)mcfg, mcfg_pages);
         
-        __asm__ volatile ("movq %0, %%cr3"::"r"(pml4));
+        __asm__ volatile (
+            "movq %0, %%cr3;"
+            "leaq 0f, %%rax;"
+            "jmp *%%rax;"
+            "0:"
+            ::"r"(pml4)
+        );
     }
-    kputs("Done!\r\n");
+    kprintf("Done!\n");
 
-    kputs("Setting IDT...");
+    kprintf("Setting IDT...");
     {
         set_idt();
     }
-    kputs("Done!\r\n");
+    kprintf("Done!\n");
 
-    kputs("Setting APIC Timer...");
+    kprintf("Setting APIC Timer...");
     {
         acpi_set_apic_timer(madt, 100);
     }
-    kputs("Done!\r\n");
+    kprintf("Done!\n");
 
-    kputs("Finding Bootdisk and Initialising NVMe...\r\n");
+    // For now, I'm gonna implement NVMe only.
+    kprintf("Finding Bootdisk and Initialising NVMe...\n");
     {
         uint64_t bootdisk_config_space_addr = (
             mcfg->config_space[bootdisk_addr.seg].base_addr + 
@@ -110,47 +119,62 @@ extern void _start(void* BootInfo) {
             ((size_t)bootdisk_addr.func << 12)
         );
         uint32_t class_code = *(uint32_t*)(bootdisk_config_space_addr + 0x08);
-        PCIE_CONFIGURATION_SPACE_HEADER_TYPE_0 bootdisk_config;
+        PCIE_CONFIGURATION_SPACE_HEADER_TYPE_0 bootdisk_config = {0, };
 
         if (
-            (class_code >> 24) == 0x01 &&
-            ((class_code >> 16) & 0xff) == 0x08
+            ((class_code >> 24) == 0x01) &&
+            (((class_code >> 16) & 0xff) == 0x08)
         ) {
-            kputs("\tFound Bootdisk.\r\n");
+            kprintf("\tFound Bootdisk.\n");
         }
         else {
-            kputs("\tCould not find bootdisk.\r\n");
+            kprintf("\tCould not find bootdisk.\n");
             while(1);
         }
 
-        for (size_t i = 0; i < PCIE_CONFIGURATION_SPACE_HEADER_SIZE / 4; i++) {
-            ((uint32_t*)&bootdisk_config)[i] = ((uint32_t*)bootdisk_config_space_addr)[i];
+        {
+            uint32_t tmp[PCIE_CONFIGURATION_SPACE_HEADER_SIZE / 4] = {0, };
+
+            for (size_t i = 0; i < PCIE_CONFIGURATION_SPACE_HEADER_SIZE / 4; i++) {
+                tmp[i] = ((volatile uint32_t*)bootdisk_config_space_addr)[i];
+            }
+
+            memcpy((void*)&bootdisk_config, (void*)tmp, PCIE_CONFIGURATION_SPACE_HEADER_SIZE);
         }
-        /*
 
-        uint64_t bootdisk_cntl_addr = ((uint64_t)bootdisk_config.base_addr0 & 0xfffffff0) | ((uint64_t)bootdisk_config.base_addr1 << 32);
-        map_page(&page_bitmap, pml4, (void*)bootdisk_cntl_addr, (void*)bootdisk_cntl_addr);
-        invlpg(bootdisk_cntl_addr);
+        uint64_t bootdisk_cntl_addr = (uint64_t)(bootdisk_config.base_addr0 & 0xfffffff0) | ((uint64_t)bootdisk_config.base_addr1 << 32);
+        map_pages(&page_bitmap, pml4, (void*)bootdisk_cntl_addr, (void*)bootdisk_cntl_addr, 3);
+
+        kprintf("\tDisabling NVMe Controller...");
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 0, 0, 1);
+        while (nvme_mmio_read_32(bootdisk_cntl_addr, NVME_CSTS_OFFSET, 0, 1));
+        kprintf("Done!\n");
+
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_AQA_OFFSET, 0, NVME_ADMIN_QUEUE_ENTRIES - 1, 12);
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_AQA_OFFSET, 16, NVME_ADMIN_QUEUE_ENTRIES - 1, 12);
+        nvme_mmio_write_64(bootdisk_cntl_addr, NVME_ASQ_OFFSET, 12, vir_to_phys((uint64_t)&asq), 52);
+        nvme_mmio_write_64(bootdisk_cntl_addr, NVME_ACQ_OFFSET, 12, vir_to_phys((uint64_t)&acq), 52);
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 4, 0, 3);
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 7, 0, 4);
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 11, 0, 3);
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 14, 0, 2);
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 16, NVME_SQE_SIZE_LOG, 4);
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 20, NVME_CQE_SIZE_LOG, 4);
+
+        kprintf("\tEnabling NVMe Controller...");
+        nvme_mmio_write_32(bootdisk_cntl_addr, NVME_CC_OFFSET, 0, 1, 1);
+        while (!(nvme_mmio_read_32(bootdisk_cntl_addr, NVME_CSTS_OFFSET, 0, 1)));
+        kprintf("Done!\n");
+
+        // nvme_command_identify(bootdisk_cntl_addr);
+
+        // kprintf("%s\n", identify_buf.mn);
+
         
-        NVME_CONTROLLER_REGISTERS* bootdisk_cntl = (NVME_CONTROLLER_REGISTERS*)((uint64_t)bootdisk_cntl_addr);
-
-        bootdisk_cntl->aqa.asqs = (uint16_t)NVME_ADMIN_QUEUE_ENTRIES - 1;
-        bootdisk_cntl->aqa.acqs = (uint16_t)NVME_ADMIN_QUEUE_ENTRIES - 1;
-        bootdisk_cntl->asq.asqb = (uint64_t)&asq & 0x000FFFFFFFFFFFFF;
-        bootdisk_cntl->acq.acqb = (uint64_t)&acq & 0x000FFFFFFFFFFFFF;
-        bootdisk_cntl->cc.iosqes = (uint8_t)NVME_SQE_SIZE_LOG;
-        bootdisk_cntl->cc.iocqes = (uint8_t)NVME_CQE_SIZE_LOG;
-        bootdisk_cntl->cc.en = (uint8_t)1;
-
-        kputs("\tWaiting for NVMe Controller...");
-        while (!(bootdisk_cntl->csts.rdy));
-        kputs("Done!\r\n");
-        
-        */
     }
-    kputs("Done!\r\n");
+    kprintf("Done!\n");
 
-    kputs("Setting syscall...");
+    kprintf("Setting syscall...");
     {
 /* set IA32_EFER.SCE (bit 0) to enable syscall/sysret instruction */
         wrmsr(0xc0000080, rdmsr(0xc0000080) | 1);
@@ -163,9 +187,9 @@ extern void _start(void* BootInfo) {
         wrmsr(0xc0000081, (rdmsr(0xc0000081) & 0xffffffff) | ((uint64_t)0x08 << 32) | ((uint64_t)0x18 << 48));
         wrmsr(0xc0000084, rdmsr(0xc0000084) | (uint64_t)(1 << 9));
     }
-    kputs("Done!\r\n");
+    kprintf("Done!\n");
 
-    kputs("Entering user mode...\r\n\r\n");
+    kprintf("Entering user mode...\n\n");
     
 
     

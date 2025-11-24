@@ -143,6 +143,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable
                 bootdisk_addr.dev = (UINT8)dev;
                 bootdisk_addr.func = (UINT8)func;
                 
+                
                 break;
             }
         }

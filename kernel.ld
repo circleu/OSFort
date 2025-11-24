@@ -2,7 +2,7 @@ OUTPUT_FORMAT(elf64-x86-64)
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x10000;
+    . = 0x100000;
     
     _kernel_start = .;
     .text : ALIGN(0x1000) {

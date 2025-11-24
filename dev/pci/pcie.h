@@ -30,7 +30,9 @@ typedef struct {
     uint16_t command;
     uint16_t status;
     uint8_t rev_id;
-    uint32_t class_code : 24;
+    uint8_t prog_if;
+    uint8_t subclass;
+    uint8_t base_class;
     uint8_t cache_line_size;
     uint8_t latency_timer;
     uint8_t header_type;
@@ -48,7 +50,9 @@ typedef struct {
     uint16_t command;
     uint16_t status;
     uint8_t rev_id;
-    uint32_t class_code : 24;
+    uint8_t prog_if;
+    uint8_t subclass;
+    uint8_t base_class;
     uint8_t cache_line_size;
     uint8_t latency_timer;
     uint8_t header_type;
@@ -76,7 +80,9 @@ typedef struct {
     uint16_t command;
     uint16_t status;
     uint8_t rev_id;
-    uint32_t class_code : 24;
+    uint8_t prog_if;
+    uint8_t subclass;
+    uint8_t base_class;
     uint8_t cache_line_size;
     uint8_t primary_latency_timer;
     uint8_t header_type;

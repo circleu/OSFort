@@ -43,6 +43,18 @@ void set_idt() {
     idt.spurious_irq.offs1 = (uint16_t)((isr >> 16) & 0xffff);
     idt.spurious_irq.offs2 = (uint32_t)((isr >> 32) & 0xffffffff);
 
+    isr = (uint64_t)int_2b;
+    idt.int_2b.offs0 = (uint16_t)(isr & 0xffff);
+    idt.int_2b.seg = 0x0008;
+    idt.int_2b.ist = 0b000;
+    idt.int_2b.zero0 = 0;
+    idt.int_2b.type = 0b1110;
+    idt.int_2b.zero1 = 0;
+    idt.int_2b.dpl = 0b00;
+    idt.int_2b.p = 1;
+    idt.int_2b.offs1 = (uint16_t)((isr >> 16) & 0xffff);
+    idt.int_2b.offs2 = (uint32_t)((isr >> 32) & 0xffffffff);
+
     isr = (uint64_t)pf;
     idt.pf.offs0 = (uint16_t)(isr & 0xffff);
     idt.pf.seg = 0x0008;
@@ -85,6 +97,7 @@ void set_idt() {
     *(GATE_DESCRIPTOR*)(idtr.offs + 0x20 * sizeof(GATE_DESCRIPTOR)) = idt.timer;
     *(GATE_DESCRIPTOR*)(idtr.offs + 0x21 * sizeof(GATE_DESCRIPTOR)) = idt.keyboard;
     *(GATE_DESCRIPTOR*)(idtr.offs + 0x27 * sizeof(GATE_DESCRIPTOR)) = idt.spurious_irq;
+    *(GATE_DESCRIPTOR*)(idtr.offs + 0x2b * sizeof(GATE_DESCRIPTOR)) = idt.int_2b;
     *(GATE_DESCRIPTOR*)(idtr.offs + 0x0e * sizeof(GATE_DESCRIPTOR)) = idt.pf;
     *(GATE_DESCRIPTOR*)(idtr.offs + 0x08 * sizeof(GATE_DESCRIPTOR)) = idt.df;
     *(GATE_DESCRIPTOR*)(idtr.offs + 0x0d * sizeof(GATE_DESCRIPTOR)) = idt.gp;
@@ -130,24 +143,40 @@ __attribute__((interrupt)) void spurious_irq(struct interrupt_frame*) {
     outb(0x20, 0x20);
     return;
 }
+__attribute__((interrupt)) void int_2b(struct interrupt_frame*) {
+    outb(0x20, 0x20);
+    return;
+}
 __attribute__((interrupt)) void pf(struct interrupt_frame*) {
     outb(0x20, 0x20);
+    __asm__ volatile (
+        "cli;"
+        "hlt;"
+    );
     clear_screen(0xff444444);
-    kputs("#PF\r\n");
+    kputs("#PF\n");
     while (1);
     return;
 }
 __attribute__((interrupt)) void df(struct interrupt_frame*) {
     outb(0x20, 0x20);
+    __asm__ volatile (
+        "cli;"
+        "hlt;"
+    );
     clear_screen(0xff444444);
-    kputs("#DF\r\n");
+    kputs("#DF\n");
     while (1);
     return;
 }
 __attribute__((interrupt)) void gp(struct interrupt_frame*) {
     outb(0x20, 0x20);
+    __asm__ volatile (
+        "cli;"
+        "hlt;"
+    );
     clear_screen(0xff444444);
-    kputs("#GP\r\n");
+    kputs("#GP\n");
     while (1);
     return;
 }

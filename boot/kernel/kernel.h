@@ -19,6 +19,8 @@
 #include "asm.h"
 #include "print.h"
 
+#define KERNEL_START 0x0000FFFF00000000
+
 
 void enter_usr_mode(void* entry, void* usr_stack) {
     __asm__ volatile (
@@ -44,6 +46,8 @@ extern PAGE_BITMAP page_bitmap;
 extern GRAPHICS graphics;
 extern uint8_t asq[NVME_ADMIN_QUEUE_ENTRIES * NVME_SQE_SIZE];
 extern uint8_t acq[NVME_ADMIN_QUEUE_ENTRIES * NVME_CQE_SIZE];
+extern NVME_IDENTIFY_CONTROLLER_DATA_STRUCTURE identify_buf;
+extern __attribute__((sysv_abi)) void jmp_hh();
 
 
 #endif

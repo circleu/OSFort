@@ -27,6 +27,7 @@ typedef struct {
     GATE_DESCRIPTOR timer;
     GATE_DESCRIPTOR keyboard;
     GATE_DESCRIPTOR spurious_irq;
+    GATE_DESCRIPTOR int_2b;
     GATE_DESCRIPTOR pf;
     GATE_DESCRIPTOR df;
     GATE_DESCRIPTOR gp;
@@ -40,6 +41,7 @@ void set_idt(void);
 __attribute__((interrupt)) void timer(struct interrupt_frame*);
 __attribute__((interrupt)) void keyboard(struct interrupt_frame*);
 __attribute__((interrupt)) void spurious_irq(struct interrupt_frame*);
+__attribute__((interrupt)) void int_2b(struct interrupt_frame*);
 __attribute__((interrupt)) void pf(struct interrupt_frame*);
 __attribute__((interrupt)) void df(struct interrupt_frame*);
 __attribute__((interrupt)) void gp(struct interrupt_frame*);
